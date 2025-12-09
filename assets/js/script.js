@@ -1,6 +1,7 @@
 const TOTP_INTERVAL = 30000;
 const HISTORY_STORAGE_KEY = '2fa_history';
 const THEME_STORAGE_KEY = 'theme_preference';
+const AUTO_SAVE_KEY = '2fa_autosave';
 const MAX_HISTORY_ITEMS = 20;
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
@@ -124,11 +125,15 @@ function setStoredHistory(history) {
   }
 }
 
+function getSystemTheme() {
+  return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
 function getStoredTheme() {
   try {
-    return localStorage.getItem(THEME_STORAGE_KEY) || 'dark';
+    return localStorage.getItem(THEME_STORAGE_KEY) || 'system';
   } catch (error) {
-    return 'dark';
+    return 'system';
   }
 }
 
@@ -140,29 +145,103 @@ function setStoredTheme(theme) {
   }
 }
 
-function setTheme(theme) {
-  document.body.setAttribute('data-theme', theme);
-  setStoredTheme(theme);
+function getEffectiveTheme() {
+  const preference = getStoredTheme();
+  if (preference === 'system') {
+    return getSystemTheme();
+  }
+  return preference;
 }
 
-function toggleTheme() {
-  const currentTheme = document.body.getAttribute('data-theme');
-  const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-  setTheme(newTheme);
-  updateThemeLabel(newTheme);
+function setTheme(preference) {
+  const effectiveTheme = preference === 'system' ? getSystemTheme() : preference;
+  document.body.setAttribute('data-theme', effectiveTheme);
+  setStoredTheme(preference);
+  updateThemeIcon(effectiveTheme);
+  updateThemeDropdown(preference);
 }
 
-function updateThemeLabel(theme) {
-  const label = document.getElementById('themeToggleLabel');
-  if (label) {
-    label.textContent = theme === 'dark' ? 'Dark mode' : 'Light mode';
+function updateThemeIcon(effectiveTheme) {
+  const preference = getStoredTheme();
+  const sunIcon = document.querySelector('.theme-icon-sun');
+  const moonIcon = document.querySelector('.theme-icon-moon');
+  const systemIcon = document.querySelector('.theme-icon-system');
+  
+  if (sunIcon) {
+    sunIcon.style.display = 'none';
+    sunIcon.style.opacity = '0';
+  }
+  if (moonIcon) {
+    moonIcon.style.display = 'none';
+    moonIcon.style.opacity = '0';
+  }
+  if (systemIcon) {
+    systemIcon.style.display = 'none';
+    systemIcon.style.opacity = '0';
+  }
+  
+  if (preference === 'system') {
+    if (systemIcon) {
+      systemIcon.style.display = 'block';
+      systemIcon.style.opacity = '1';
+    }
+  } else if (preference === 'light') {
+    if (sunIcon) {
+      sunIcon.style.display = 'block';
+      sunIcon.style.opacity = '1';
+    }
+  } else if (preference === 'dark') {
+    if (moonIcon) {
+      moonIcon.style.display = 'block';
+      moonIcon.style.opacity = '1';
+    }
   }
 }
 
+function updateThemeDropdown(preference) {
+  const options = document.querySelectorAll('.theme-option');
+  options.forEach(option => {
+    if (option.dataset.theme === preference) {
+      option.classList.add('active');
+    } else {
+      option.classList.remove('active');
+    }
+  });
+}
+
+function toggleThemeDropdown() {
+  const dropdown = document.getElementById('themeDropdown');
+  if (dropdown) {
+    dropdown.classList.toggle('active');
+  }
+}
+
+function closeThemeDropdown() {
+  const dropdown = document.getElementById('themeDropdown');
+  if (dropdown) {
+    dropdown.classList.remove('active');
+  }
+}
+
+function selectTheme(themePreference) {
+  setTheme(themePreference);
+  closeThemeDropdown();
+}
+
 function initializeTheme() {
-  const savedTheme = getStoredTheme();
-  setTheme(savedTheme);
-  updateThemeLabel(savedTheme);
+  const savedPreference = getStoredTheme();
+  setTheme(savedPreference);
+  
+  if (window.matchMedia) {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    mediaQuery.addEventListener('change', (e) => {
+      if (getStoredTheme() === 'system') {
+        const newTheme = e.matches ? 'dark' : 'light';
+        document.body.setAttribute('data-theme', newTheme);
+        updateThemeIcon(newTheme);
+      }
+    });
+  }
 }
 
 function updateMainTimer() {
@@ -682,18 +761,9 @@ function togglePrivacyMode() {
   state.privacyMode = !state.privacyMode;
   
   // Atualizar ícone SVG
-  if (elements.privacyIcon) {
-    if (state.privacyMode) {
-      // Olho fechado (oculto) - eye-slash
-      elements.privacyIcon.setAttribute('viewBox', '0 0 16 16');
-      elements.privacyIcon.innerHTML = '<path d="M13.359 11.238C15.06 9.72 16 8 16 8s-3-5.5-8-5.5a7 7 0 0 0-2.79.588l.77.771A6 6 0 0 1 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13 13 0 0 1 14.828 8q-.086.13-.195.288c-.335.48-.83 1.12-1.465 1.755q-.247.248-.517.486z"/><path d="M11.297 9.176a3.5 3.5 0 0 0-4.474-4.474l.823.823a2.5 2.5 0 0 1 2.829 2.829zm-2.943 1.299.822.822a3.5 3.5 0 0 1-4.474-4.474l.823.823a2.5 2.5 0 0 0 2.829 2.829"/><path d="M3.35 5.47q-.27.24-.518.487A13 13 0 0 0 1.172 8l.195.288c.335.48.83 1.12 1.465 1.755C4.121 11.332 5.881 12.5 8 12.5c.716 0 1.39-.133 2.02-.36l.77.772A7 7 0 0 1 8 13.5C3 13.5 0 8 0 8s.939-1.721 2.641-3.238l.708.709zm10.296 8.884-12-12 .708-.708 12 12z"/>';
-      elements.privacyToggle.setAttribute('title', 'Mostrar dados sensíveis');
-    } else {
-      // Olho aberto (visível) - eye
-      elements.privacyIcon.setAttribute('viewBox', '0 0 16 16');
-      elements.privacyIcon.innerHTML = '<path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8M1.173 8a13 13 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5s3.879 1.168 5.168 2.457A13 13 0 0 1 14.828 8q-.086.13-.195.288c-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.119 12.5 8 12.5s-3.879-1.168-5.168-2.457A13 13 0 0 1 1.172 8z"/><path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5M4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0"/>';
-      elements.privacyToggle.setAttribute('title', 'Ocultar dados sensíveis');
-    }
+  if (elements.privacyToggle) {
+    elements.privacyToggle.classList.toggle('active', state.privacyMode);
+    elements.privacyToggle.setAttribute('title', state.privacyMode ? 'Mostrar dados sensíveis' : 'Ocultar dados sensíveis');
   }
   
   // Atualizar código principal
@@ -723,8 +793,42 @@ function togglePrivacyMode() {
   renderHistory();
 }
 
+// Reset Page Function
+function resetPage() {
+  if (confirm('Tem certeza que deseja descarregar todos os dados? Isso irá limpar todo o histórico e dados salvos, resetando a página para o estado padrão.')) {
+    // Limpar todos os dados do localStorage
+    localStorage.removeItem(HISTORY_STORAGE_KEY);
+    localStorage.removeItem(AUTO_SAVE_KEY);
+    
+    // Recarregar a página para resetar tudo
+    window.location.reload();
+  }
+}
+
 function addEventListeners() {
-  elements.themeToggle.addEventListener('click', toggleTheme);
+  elements.themeToggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleThemeDropdown();
+  });
+  
+  document.querySelectorAll('.theme-option').forEach(option => {
+    option.addEventListener('click', (e) => {
+      e.stopPropagation();
+      selectTheme(option.dataset.theme);
+    });
+  });
+  
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.theme-dropdown-wrapper')) {
+      closeThemeDropdown();
+    }
+  });
+  
+  // Reset button
+  const resetButton = document.getElementById('resetButton');
+  if (resetButton) {
+    resetButton.addEventListener('click', resetPage);
+  }
   
   elements.secretInput.addEventListener('input', validateAndCleanInput);
   elements.secretInput.addEventListener('keypress', handleInputKeyPress);
@@ -755,16 +859,72 @@ function addEventListeners() {
   }
 }
 
+// Auto-save Functions
+function saveFormData() {
+  const formData = {
+    name: elements.nameInputField?.value || '',
+    secret: elements.secretInput?.value || '',
+    hideSecret: elements.hideSecretOption?.checked || false
+  };
+  
+  try {
+    localStorage.setItem(AUTO_SAVE_KEY, JSON.stringify(formData));
+  } catch (error) {
+    console.error('Erro ao salvar dados:', error);
+  }
+}
+
+function loadFormData() {
+  try {
+    const saved = localStorage.getItem(AUTO_SAVE_KEY);
+    if (!saved) return;
+    
+    const formData = JSON.parse(saved);
+    
+    if (elements.nameInputField && formData.name) {
+      elements.nameInputField.value = formData.name;
+    }
+    
+    if (elements.secretInput && formData.secret) {
+      elements.secretInput.value = formData.secret;
+    }
+    
+    if (elements.hideSecretOption && formData.hideSecret !== undefined) {
+      elements.hideSecretOption.checked = formData.hideSecret;
+    }
+  } catch (error) {
+    console.error('Erro ao carregar dados salvos:', error);
+  }
+}
+
+function setupAutoSave() {
+  if (elements.nameInputField) {
+    elements.nameInputField.addEventListener('input', saveFormData);
+  }
+  
+  if (elements.secretInput) {
+    elements.secretInput.addEventListener('input', saveFormData);
+  }
+  
+  if (elements.hideSecretOption) {
+    elements.hideSecretOption.addEventListener('change', saveFormData);
+  }
+}
+
 function initialize() {
   initializeTheme();
   addEventListeners();
+  setupAutoSave();
+  loadFormData();
   renderHistory();
   
   // Inicializar placeholder do campo de nome
   if (elements.nameInputField) {
     const history = getStoredHistory();
     const defaultName = `Consulta ${history.length + 1}`;
-    elements.nameInputField.placeholder = defaultName;
+    if (!elements.nameInputField.value) {
+      elements.nameInputField.placeholder = defaultName;
+    }
   }
   
   elements.secretInput.focus();
